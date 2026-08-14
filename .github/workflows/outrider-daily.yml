@@ -8,8 +8,8 @@ name: Outrider daily (branch-mode, drafter)
 # Backend for this tier: provider=zai model=glm-5.2
 
 on:
-  schedule:
-    - cron: '0 6 * * *'
+  # schedule:  # disabled - serial dispatcher drives workflow_dispatch
+    # - cron: '0 6 * * *'
   workflow_dispatch: {}
 
 concurrency:
