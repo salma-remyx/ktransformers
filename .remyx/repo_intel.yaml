@@ -1,0 +1,18 @@
+schema_version: 1
+fork: salma-remyx/ktransformers
+observed_landing_zones:
+- path: kt-kernel/python/sft/
+  shape_tags:
+  - library-shape-public-api
+  confirmed_by:
+  - arxiv: 2404.15159v3
+    mode: Mode 2 (adapted port)
+    call_site_specifics: LoRAExperts.forward in kt-kernel/python/sft/lora.py, reached
+      from the pre-existing wrap_moe_layers_with_kt_wrapper SFT entry point whenever
+      kt_lora_expert_top_k is set; also exported as public API fro
+    branch: mixlora-enhancing-large-language-models-fine-tuning-with-lor
+    timestamp: '2026-08-14T19:33:36Z'
+  last_observed: '2026-08-14T19:33:36Z'
+rejected_shapes: []
+coordination_signals: []
+last_updated: '2026-08-14T19:33:36Z'
