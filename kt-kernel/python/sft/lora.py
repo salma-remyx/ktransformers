@@ -24,6 +24,7 @@ import torch.nn as nn
 from .arch import MOEArchConfig
 from .checkpoint import load_full_weight_checkpoint, save_full_weight_checkpoint
 from .dist_utils import _distributed_rank_world_size
+from .lora_expert_router import GatedLoRARouter, route_experts
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,12 @@ class LoRAExpertMLP(nn.Module):
 
 
 class LoRAExperts(nn.Module):
-    """LoRA Experts module containing multiple LoRA Expert MLPs."""
+    """LoRA Experts module containing multiple LoRA Expert MLPs.
+
+    Without a gate, every expert contributes a uniform average. With
+    ``top_k < num_experts`` a zero-initialized linear gate routes each token
+    to its top-k experts (MixLoRA-style gated LoRA-MoE, arXiv:2404.15159).
+    """
 
     def __init__(
         self,
@@ -67,14 +73,27 @@ class LoRAExperts(nn.Module):
         intermediate_size: int,
         device: str = "cuda",
         dtype: torch.dtype = torch.bfloat16,
+        top_k: int | None = None,
     ):
         super().__init__()
         self.experts = nn.ModuleList(
             [LoRAExpertMLP(hidden_size, intermediate_size, device, dtype) for _ in range(num_experts)]
         )
         self.num_experts = num_experts
+        self.top_k = num_experts if top_k is None else max(1, min(int(top_k), num_experts))
+        self.gate = None
+        if self.top_k < num_experts:
+            self.gate = GatedLoRARouter(
+                hidden_size=hidden_size,
+                num_experts=num_experts,
+                top_k=self.top_k,
+                device=device,
+                dtype=dtype,
+            )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        if self.gate is not None:
+            return route_experts(self.gate, self.experts, hidden_states)
         output = torch.zeros_like(hidden_states)
         for expert in self.experts:
             output = output + expert(hidden_states)
@@ -799,6 +818,15 @@ def save_lora_experts_to_adapter(model: nn.Module, output_dir: str) -> None:
             state_dict[f"{base_key}.le_down.weight"] = expert.le_down.weight.data.cpu().clone()
             lora_expert_count += 3
 
+        # Routing gate for gated LoRA Experts (None in uniform-average mode)
+        gate = getattr(wrapper.lora_experts, "gate", None)
+        if gate is not None:
+            gate_base = f"base_model.model.model.layers.{layer_idx}.mlp.lora_experts.gate"
+            state_dict[f"{gate_base}.gate.weight"] = gate.gate.weight.data.cpu().clone()
+            if gate.gate.bias is not None:
+                state_dict[f"{gate_base}.gate.bias"] = gate.gate.bias.data.cpu().clone()
+            lora_expert_count += 1
+
         logger.debug(f"Added LoRA Experts for layer {layer_idx} ({len(wrapper.lora_experts.experts)} experts)")
 
     output_file = os.path.join(output_dir, "adapter_model.safetensors")
@@ -930,8 +958,12 @@ def load_lora_experts_from_adapter(model: nn.Module, adapter_path: str) -> None:
     lora_expert_pattern = re.compile(
         r"base_model\.model\.model\.layers\.(\d+)\.mlp\.lora_experts\.(\d+)\.(le_gate|le_up|le_down)\.weight"
     )
+    gate_pattern = re.compile(
+        r"base_model\.model\.model\.layers\.(\d+)\.mlp\.lora_experts\.gate\.gate\.(weight|bias)"
+    )
 
     layer_weights = {}
+    gate_weights = {}
     with safe_open(adapter_file, framework="pt") as f:
         for key in f.keys():
             match = lora_expert_pattern.match(key)
@@ -940,6 +972,10 @@ def load_lora_experts_from_adapter(model: nn.Module, adapter_path: str) -> None:
                 expert_idx = int(match.group(2))
                 proj_name = match.group(3)
                 layer_weights.setdefault(layer_idx, {}).setdefault(expert_idx, {})[proj_name] = f.get_tensor(key)
+                continue
+            match = gate_pattern.match(key)
+            if match:
+                gate_weights.setdefault(int(match.group(1)), {})[match.group(2)] = f.get_tensor(key)
 
     loaded_count = 0
     for layer_idx, experts_dict in layer_weights.items():
@@ -959,6 +995,18 @@ def load_lora_experts_from_adapter(model: nn.Module, adapter_path: str) -> None:
             if "le_down" in proj_dict:
                 expert.le_down.weight.data.copy_(proj_dict["le_down"].to(expert.le_down.weight.device))
             loaded_count += 1
+
+    # Routing gate for gated LoRA Experts (absent for uniform-average checkpoints)
+    for layer_idx, gate_dict in gate_weights.items():
+        wrapper = wrapper_map.get(layer_idx)
+        gate = getattr(wrapper.lora_experts, "gate", None) if wrapper is not None else None
+        if gate is None:
+            logger.warning(f"No gated LoRA Experts for layer {layer_idx}, skipping gate load")
+            continue
+        gate.gate.weight.data.copy_(gate_dict["weight"].to(gate.gate.weight.device))
+        if "bias" in gate_dict and gate.gate.bias is not None:
+            gate.gate.bias.data.copy_(gate_dict["bias"].to(gate.gate.bias.device))
+        loaded_count += 1
 
     logger.info(f"Loaded LoRA Experts for {loaded_count} experts from {adapter_path}")
 

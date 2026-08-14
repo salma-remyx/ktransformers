@@ -45,6 +45,7 @@ from .lora import (
     LoRAExpertMLP,
     LoRAExperts,
 )
+from .lora_expert_router import GatedLoRARouter, route_experts
 from .wrapper import (
     wrap_moe_layers_with_kt_wrapper,
     build_kt_device_map,
@@ -85,6 +86,8 @@ __all__ = [
     "load_kt_moe_from_adapter",
     "LoRAExpertMLP",
     "LoRAExperts",
+    "GatedLoRARouter",
+    "route_experts",
     "wrap_moe_layers_with_kt_wrapper",
     "build_kt_device_map",
     "build_kt_device_map_simplified",
