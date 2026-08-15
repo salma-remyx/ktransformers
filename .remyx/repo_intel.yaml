@@ -19,7 +19,14 @@ observed_landing_zones:
       \ and invoked by the LLaMA-Factory/accelerate integration) co"
     branch: adamole-fine-tuning-large-language-models-with-adaptive-mixt
     timestamp: '2026-08-15T00:29:17Z'
-  last_observed: '2026-08-15T00:29:17Z'
+  - arxiv: 2406.10181v2
+    mode: Mode 2 (adapted port)
+    call_site_specifics: sync_kt_lora_gradients in kt-kernel/python/sft/lora.py (exported
+      from kt_kernel.sft __init__); compress_kt_gradients runs inside it on both the
+      single-GPU and distributed paths, before optimizer.step(
+    branch: practical-offloading-for-fine-tuning-llm-on-commodity-gpu-vi
+    timestamp: '2026-08-15T06:46:27Z'
+  last_observed: '2026-08-15T06:46:27Z'
 rejected_shapes: []
 coordination_signals: []
-last_updated: '2026-08-15T00:29:17Z'
+last_updated: '2026-08-15T06:46:27Z'
