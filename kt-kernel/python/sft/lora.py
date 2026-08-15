@@ -24,6 +24,7 @@ import torch.nn as nn
 from .arch import MOEArchConfig
 from .checkpoint import load_full_weight_checkpoint, save_full_weight_checkpoint
 from .dist_utils import _distributed_rank_world_size
+from .lora_router import LoRARouter, route_lora_experts
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,14 @@ class LoRAExpertMLP(nn.Module):
 
 
 class LoRAExperts(nn.Module):
-    """LoRA Experts module containing multiple LoRA Expert MLPs."""
+    """LoRA Experts module containing multiple LoRA Expert MLPs.
+
+    By default every expert contributes a uniform 1/N share of the output.
+    Attaching a learned router (``module.router = LoRARouter(...)`` from
+    ``.lora_router``) switches the module to Mixture-of-LoRA routing: top-k
+    experts per token, weighted by their gate scores, plus load-balancing
+    statistics exposed via ``collect_kt_mol_load_balance_loss``.
+    """
 
     def __init__(
         self,
@@ -73,8 +81,12 @@ class LoRAExperts(nn.Module):
             [LoRAExpertMLP(hidden_size, intermediate_size, device, dtype) for _ in range(num_experts)]
         )
         self.num_experts = num_experts
+        self.router: LoRARouter | None = None
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        router = self.router
+        if router is not None:
+            return route_lora_experts(self, hidden_states)
         output = torch.zeros_like(hidden_states)
         for expert in self.experts:
             output = output + expert(hidden_states)
@@ -799,6 +811,12 @@ def save_lora_experts_to_adapter(model: nn.Module, output_dir: str) -> None:
             state_dict[f"{base_key}.le_down.weight"] = expert.le_down.weight.data.cpu().clone()
             lora_expert_count += 3
 
+        router = getattr(wrapper.lora_experts, "router", None)
+        if router is not None:
+            router_key = f"base_model.model.model.layers.{layer_idx}.mlp.lora_experts.router.gate.weight"
+            state_dict[router_key] = router.gate.weight.data.cpu().clone()
+            lora_expert_count += 1
+
         logger.debug(f"Added LoRA Experts for layer {layer_idx} ({len(wrapper.lora_experts.experts)} experts)")
 
     output_file = os.path.join(output_dir, "adapter_model.safetensors")
@@ -930,8 +948,12 @@ def load_lora_experts_from_adapter(model: nn.Module, adapter_path: str) -> None:
     lora_expert_pattern = re.compile(
         r"base_model\.model\.model\.layers\.(\d+)\.mlp\.lora_experts\.(\d+)\.(le_gate|le_up|le_down)\.weight"
     )
+    lora_router_pattern = re.compile(
+        r"base_model\.model\.model\.layers\.(\d+)\.mlp\.lora_experts\.router\.gate\.weight"
+    )
 
     layer_weights = {}
+    layer_router_weights = {}
     with safe_open(adapter_file, framework="pt") as f:
         for key in f.keys():
             match = lora_expert_pattern.match(key)
@@ -940,6 +962,10 @@ def load_lora_experts_from_adapter(model: nn.Module, adapter_path: str) -> None:
                 expert_idx = int(match.group(2))
                 proj_name = match.group(3)
                 layer_weights.setdefault(layer_idx, {}).setdefault(expert_idx, {})[proj_name] = f.get_tensor(key)
+                continue
+            router_match = lora_router_pattern.match(key)
+            if router_match:
+                layer_router_weights[int(router_match.group(1))] = f.get_tensor(key)
 
     loaded_count = 0
     for layer_idx, experts_dict in layer_weights.items():
@@ -959,6 +985,11 @@ def load_lora_experts_from_adapter(model: nn.Module, adapter_path: str) -> None:
             if "le_down" in proj_dict:
                 expert.le_down.weight.data.copy_(proj_dict["le_down"].to(expert.le_down.weight.device))
             loaded_count += 1
+
+        router = getattr(wrapper.lora_experts, "router", None)
+        router_weight = layer_router_weights.get(layer_idx)
+        if router is not None and router_weight is not None:
+            router.gate.weight.data.copy_(router_weight.to(router.gate.weight.device))
 
     logger.info(f"Loaded LoRA Experts for {loaded_count} experts from {adapter_path}")
 

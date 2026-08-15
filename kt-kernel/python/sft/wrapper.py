@@ -23,6 +23,7 @@ from .arch import (
 )
 from .layer import KTMoELayerWrapper
 from .lora import LoRAExperts
+from .lora_router import LoRARouter
 from .base import _supports_authoritative_optimizer_grads
 from .checkpoint import load_full_weight_layer, resolve_full_weight_checkpoint
 from .dist_utils import _distributed_rank_world_size
@@ -194,10 +195,21 @@ def wrap_moe_layers_with_kt_wrapper(model: nn.Module, kt_plugin: Any) -> list[KT
     lora_expert_num = getattr(cfg, "kt_lora_expert_num", 2) or 2
     lora_expert_intermediate_size = getattr(cfg, "kt_lora_expert_intermediate_size", 1024) or 1024
 
+    # Optional Mixture-of-LoRA routing over the LoRA Experts (Macaron-V1 style).
+    # None keeps the uniform-average LoRA Experts behavior.
+    kt_mol_top_k = getattr(cfg, "kt_mol_top_k", None)
+    if kt_mol_top_k is not None:
+        kt_mol_top_k = int(kt_mol_top_k)
+        if not 1 <= kt_mol_top_k <= lora_expert_num:
+            raise ValueError(
+                f"kt_mol_top_k must be in [1, kt_lora_expert_num={lora_expert_num}], got {kt_mol_top_k}"
+            )
+
     if is_rank_0:
         logger.info(
             f"LoRA Experts config: use_lora_experts={use_lora_experts}, "
-            f"num={lora_expert_num}, intermediate_size={lora_expert_intermediate_size}"
+            f"num={lora_expert_num}, intermediate_size={lora_expert_intermediate_size}, "
+            f"mol_top_k={kt_mol_top_k}"
         )
         if full_weight_grad:
             logger.info(f"Full weight gradient mode enabled (lora_rank={lora_rank})")
@@ -462,6 +474,14 @@ def wrap_moe_layers_with_kt_wrapper(model: nn.Module, kt_plugin: Any) -> list[KT
                 device="cuda",
                 dtype=torch.bfloat16,
             )
+            if kt_mol_top_k is not None:
+                lora_experts.router = LoRARouter(
+                    num_experts=lora_expert_num,
+                    hidden_size=hidden_size,
+                    top_k=kt_mol_top_k,
+                    device="cuda",
+                    dtype=torch.bfloat16,
+                )
 
         layer_wrapper = KTMoELayerWrapper(
             original_moe=moe_module,
@@ -551,6 +571,7 @@ def _build_kt_plugin_from_args(model_args: Any, finetuning_args: Any | None = No
         kt_use_lora_experts=getattr(model_args, "kt_use_lora_experts", None),
         kt_lora_expert_num=getattr(model_args, "kt_lora_expert_num", None),
         kt_lora_expert_intermediate_size=getattr(model_args, "kt_lora_expert_intermediate_size", None),
+        kt_mol_top_k=getattr(model_args, "kt_mol_top_k", None),
         kt_lora_rank=configured_lora_rank,
         kt_lora_alpha=configured_lora_alpha,
         kt_model_max_length=getattr(model_args, "model_max_length", None),

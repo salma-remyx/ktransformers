@@ -167,6 +167,9 @@ class KTConfig:
     kt_use_lora_experts: bool | None = None
     kt_lora_expert_num: int | None = None
     kt_lora_expert_intermediate_size: int | None = None
+    # Mixture-of-LoRA routing over the LoRA Experts (top-k per token).
+    # None/unset keeps the uniform-average LoRA Experts behavior.
+    kt_mol_top_k: int | None = None
 
     # Runtime state (set during wrapping, not by user)
     kt_checkpoint_files: list[str] | None = None
@@ -215,6 +218,8 @@ class KTConfig:
             self.kt_lora_expert_num = _env_int("ACCELERATE_KT_LORA_EXPERT_NUM", None)
         if self.kt_lora_expert_intermediate_size is None:
             self.kt_lora_expert_intermediate_size = _env_int("ACCELERATE_KT_LORA_EXPERT_INTERMEDIATE_SIZE", None)
+        if self.kt_mol_top_k is None:
+            self.kt_mol_top_k = _env_int("ACCELERATE_KT_MOL_TOP_K", None)
         if self.kt_lora_rank is None:
             self.kt_lora_rank = _env_int("ACCELERATE_KT_LORA_RANK", None)
         if self.kt_lora_alpha is None:
