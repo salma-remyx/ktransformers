@@ -53,6 +53,13 @@ from .wrapper import (
     load_kt_model,
 )
 from .profiler import collect_kt_sft_profile, format_kt_sft_profile, reset_kt_sft_profile
+from .grad_compression import (
+    enable_kt_gradient_compression,
+    disable_kt_gradient_compression,
+    compress_kt_gradients,
+    restore_kt_gradients,
+    kt_gradient_compression_stats,
+)
 
 __all__ = [
     "KTConfig",
@@ -93,4 +100,9 @@ __all__ = [
     "collect_kt_sft_profile",
     "format_kt_sft_profile",
     "reset_kt_sft_profile",
+    "enable_kt_gradient_compression",
+    "disable_kt_gradient_compression",
+    "compress_kt_gradients",
+    "restore_kt_gradients",
+    "kt_gradient_compression_stats",
 ]

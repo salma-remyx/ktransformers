@@ -709,6 +709,11 @@ def sync_kt_lora_gradients(model: nn.Module) -> None:
     import torch.distributed as dist
 
     if not (dist.is_initialized() and dist.get_world_size() > 1):
+        # Single-GPU still crosses the CPU→optimizer boundary; apply
+        # opt-in gradient compression there too.
+        from .grad_compression import compress_kt_gradients
+
+        compress_kt_gradients(model)
         return
 
     world_size = dist.get_world_size()
@@ -753,6 +758,14 @@ def sync_kt_lora_gradients(model: nn.Module) -> None:
                         raise RuntimeError(
                             f"Layer {wrapper.layer_idx}: non-rank-0 KT LoRA Parameter unexpectedly has a gradient"
                         )
+
+    # CPU→optimizer boundary: when the caller opted into learned-sparse
+    # gradient compression (see grad_compression.py), replace each KT
+    # trainable gradient with its low-rank + top-k representation before
+    # the optimizer sees it.  Runs on every rank that owns gradients.
+    from .grad_compression import compress_kt_gradients
+
+    compress_kt_gradients(model)
 
 
 # =============================================================================
