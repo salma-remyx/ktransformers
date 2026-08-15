@@ -587,12 +587,14 @@ class OnlineQuantConverter(ConverterBase):
         quant_method: str = "int4",
         merge_to_safetensor: bool = True,
         save_backward_weights: bool = False,
+        refine_sweeps: int = 0,
     ):
         super().__init__(
             input_path, output_path, model_config, cpuinfer_threads, threadpool_count, input_type, merge_to_safetensor
         )
         self.quant_method = quant_method
         self.save_backward_weights = save_backward_weights
+        self.refine_sweeps = refine_sweeps
 
         # Use tmpfs for intermediate .kt files when merging to safetensor
         if merge_to_safetensor and os.path.isdir("/dev/shm"):
@@ -777,6 +779,28 @@ class OnlineQuantConverter(ConverterBase):
         if os.path.exists(layer_path):
             shutil.rmtree(layer_path)
             print(f"  Removed temporary folder: {layer_path}")
+
+    def _maybe_refine_expert_weights(
+        self, gate_proj: torch.Tensor, up_proj: torch.Tensor, down_proj: torch.Tensor
+    ) -> None:
+        """Refine discrete grid assignments in place before AMX quantization.
+
+        Runs fixed-grid refinement (ReQuant-style discrete revisit + least-
+        squares scale re-fit) on each projection so the RTN pass inside the
+        AMX quantizer materializes lower-MSE assignments on the same grid.
+        No-op unless ``refine_sweeps > 0``.
+        """
+        if self.refine_sweeps <= 0:
+            return
+        from fixed_grid_refinement import METHOD_QMAX, refine_weight_grid_
+
+        qmax = METHOD_QMAX[self.quant_method]
+        for name, proj in [("gate_proj", gate_proj), ("up_proj", up_proj), ("down_proj", down_proj)]:
+            stats = refine_weight_grid_(proj, qmax=qmax, num_sweeps=self.refine_sweeps)
+            print(
+                f"  [refine] {name}: mse {stats['initial_mse']:.6g} -> {stats['final_mse']:.6g} "
+                f"({stats['changed'] * 100:.1f}% rows improved, {len(stats['mse_history'])} sweeps)"
+            )
 
     def _convert_layer_experts(self, layer_idx: int, expert_ids: List[int]) -> Dict[str, torch.Tensor]:
         """Convert all experts in a layer using online quantization via AMXMoEWrapper"""
@@ -967,6 +991,10 @@ class OnlineQuantConverter(ConverterBase):
         print(f"    up_proj: {up_proj.shape}")
         print(f"    down_proj: {down_proj.shape}")
 
+        # Optional fixed-grid refinement of the discrete assignments before
+        # the AMX quantizer packs them (see fixed_grid_refinement.py).
+        self._maybe_refine_expert_weights(gate_proj, up_proj, down_proj)
+
         # Create physical_to_logical_map: identity mapping where position i maps to expert i
         physical_to_logical_map = torch.arange(self.num_experts, dtype=torch.int64)
 
@@ -1129,6 +1157,13 @@ def main():
         help="Also save pre-quantized backward weights (transposed) for SFT training (default: False)",
     )
     parser.add_argument(
+        "--refine-sweeps",
+        type=int,
+        default=0,
+        help="Fixed-grid refinement sweeps applied to expert weights before AMX quantization "
+        "(0 = disabled, default: 0)",
+    )
+    parser.add_argument(
         "--profile",
         action="store_true",
         default=False,
@@ -1181,6 +1216,7 @@ def main():
                 quant_method,
                 merge_to_safetensor,
                 save_backward_weights=args.save_backward_weights,
+                refine_sweeps=args.refine_sweeps,
             )
         else:
             raise ValueError(
