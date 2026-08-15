@@ -23,6 +23,7 @@ from .arch import (
 )
 from .layer import KTMoELayerWrapper
 from .lora import LoRAExperts
+from .lora_gate import LoRAGate
 from .base import _supports_authoritative_optimizer_grads
 from .checkpoint import load_full_weight_layer, resolve_full_weight_checkpoint
 from .dist_utils import _distributed_rank_world_size
@@ -193,6 +194,8 @@ def wrap_moe_layers_with_kt_wrapper(model: nn.Module, kt_plugin: Any) -> list[KT
     use_lora_experts = bool(_raw_le) if _raw_le is not None else False
     lora_expert_num = getattr(cfg, "kt_lora_expert_num", 2) or 2
     lora_expert_intermediate_size = getattr(cfg, "kt_lora_expert_intermediate_size", 1024) or 1024
+    _raw_gate = getattr(cfg, "kt_lora_expert_gate", None)
+    use_lora_expert_gate = bool(_raw_gate) if _raw_gate is not None else False
 
     if is_rank_0:
         logger.info(
@@ -455,12 +458,18 @@ def wrap_moe_layers_with_kt_wrapper(model: nn.Module, kt_plugin: Any) -> list[KT
         # Create LoRA Experts if enabled
         lora_experts = None
         if use_lora_experts:
+            lora_gate = (
+                LoRAGate(lora_expert_num, hidden_size, device="cuda", dtype=torch.bfloat16)
+                if use_lora_expert_gate
+                else None
+            )
             lora_experts = LoRAExperts(
                 num_experts=lora_expert_num,
                 hidden_size=hidden_size,
                 intermediate_size=lora_expert_intermediate_size,
                 device="cuda",
                 dtype=torch.bfloat16,
+                gate=lora_gate,
             )
 
         layer_wrapper = KTMoELayerWrapper(

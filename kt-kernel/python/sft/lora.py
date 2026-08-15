@@ -24,8 +24,15 @@ import torch.nn as nn
 from .arch import MOEArchConfig
 from .checkpoint import load_full_weight_checkpoint, save_full_weight_checkpoint
 from .dist_utils import _distributed_rank_world_size
+from .lora_gate import LoRAGate
 
 logger = logging.getLogger(__name__)
+
+# Matches the router/threshold params written by save_lora_experts_to_adapter,
+# e.g. "...layers.3.mlp.lora_experts.gate.threshold_net.w_pi.weight".
+_lora_gate_param_pattern = re.compile(
+    r"base_model\.model\.model\.layers\.(\d+)\.mlp\.lora_experts\.gate\.(.+)$"
+)
 
 
 # =============================================================================
@@ -58,7 +65,12 @@ class LoRAExpertMLP(nn.Module):
 
 
 class LoRAExperts(nn.Module):
-    """LoRA Experts module containing multiple LoRA Expert MLPs."""
+    """LoRA Experts module containing multiple LoRA Expert MLPs.
+
+    With ``gate=None`` (the default) experts are mixed uniformly. Passing a
+    :class:`~kt_kernel.sft.lora_gate.LoRAGate` replaces that fixed mix with a
+    learned router whose per-token threshold decides how many experts fire.
+    """
 
     def __init__(
         self,
@@ -67,18 +79,33 @@ class LoRAExperts(nn.Module):
         intermediate_size: int,
         device: str = "cuda",
         dtype: torch.dtype = torch.bfloat16,
+        gate: LoRAGate | None = None,
     ):
         super().__init__()
         self.experts = nn.ModuleList(
             [LoRAExpertMLP(hidden_size, intermediate_size, device, dtype) for _ in range(num_experts)]
         )
         self.num_experts = num_experts
+        self.gate = gate
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        if self.gate is None:
+            output = torch.zeros_like(hidden_states)
+            for expert in self.experts:
+                output = output + expert(hidden_states)
+            return output / self.num_experts
+
+        gate_weights, active_mask = self.gate(hidden_states)
+        gate_weights = gate_weights.to(hidden_states.dtype)
         output = torch.zeros_like(hidden_states)
-        for expert in self.experts:
-            output = output + expert(hidden_states)
-        return output / self.num_experts
+        for idx, expert in enumerate(self.experts):
+            # Inactive experts are already zeroed by their weight, but skipping
+            # them keeps the dense-eval path from paying for experts that fire
+            # on no token in the batch.
+            if not bool(active_mask[:, idx].any()):
+                continue
+            output = output + expert(hidden_states) * gate_weights[:, idx : idx + 1]
+        return output
 
 
 # =============================================================================
@@ -799,6 +826,12 @@ def save_lora_experts_to_adapter(model: nn.Module, output_dir: str) -> None:
             state_dict[f"{base_key}.le_down.weight"] = expert.le_down.weight.data.cpu().clone()
             lora_expert_count += 3
 
+        if wrapper.lora_experts.gate is not None:
+            gate_key = f"base_model.model.model.layers.{layer_idx}.mlp.lora_experts.gate"
+            for name, param in wrapper.lora_experts.gate.named_parameters():
+                state_dict[f"{gate_key}.{name}"] = param.data.cpu().clone()
+                lora_expert_count += 1
+
         logger.debug(f"Added LoRA Experts for layer {layer_idx} ({len(wrapper.lora_experts.experts)} experts)")
 
     output_file = os.path.join(output_dir, "adapter_model.safetensors")
@@ -932,6 +965,7 @@ def load_lora_experts_from_adapter(model: nn.Module, adapter_path: str) -> None:
     )
 
     layer_weights = {}
+    layer_gate_params = {}
     with safe_open(adapter_file, framework="pt") as f:
         for key in f.keys():
             match = lora_expert_pattern.match(key)
@@ -940,6 +974,10 @@ def load_lora_experts_from_adapter(model: nn.Module, adapter_path: str) -> None:
                 expert_idx = int(match.group(2))
                 proj_name = match.group(3)
                 layer_weights.setdefault(layer_idx, {}).setdefault(expert_idx, {})[proj_name] = f.get_tensor(key)
+                continue
+            gate_match = _lora_gate_param_pattern.match(key)
+            if gate_match:
+                layer_gate_params[key] = f.get_tensor(key)
 
     loaded_count = 0
     for layer_idx, experts_dict in layer_weights.items():
@@ -958,6 +996,18 @@ def load_lora_experts_from_adapter(model: nn.Module, adapter_path: str) -> None:
                 expert.le_up.weight.data.copy_(proj_dict["le_up"].to(expert.le_up.weight.device))
             if "le_down" in proj_dict:
                 expert.le_down.weight.data.copy_(proj_dict["le_down"].to(expert.le_down.weight.device))
+            loaded_count += 1
+
+    for key, tensor in layer_gate_params.items():
+        match = _lora_gate_param_pattern.match(key)
+        wrapper = wrapper_map[int(match.group(1))]
+        if wrapper.lora_experts.gate is None:
+            logger.warning(f"Layer {match.group(1)} has no LoRA gate, skipping gate weights")
+            continue
+        params = dict(wrapper.lora_experts.gate.named_parameters())
+        if match.group(2) in params:
+            param = params[match.group(2)]
+            param.data.copy_(tensor.to(param.device))
             loaded_count += 1
 
     logger.info(f"Loaded LoRA Experts for {loaded_count} experts from {adapter_path}")

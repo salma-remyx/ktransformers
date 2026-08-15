@@ -103,6 +103,7 @@ KTransformers × LLaMA-Factory integration for ultra-large MoE model fine-tuning
 - **Faster than ZeRO-Offload**: 6-12x training speedup in benchmarked MoE SFT workloads
 - **Lower CPU Memory**: About half the CPU memory of the previous KT SFT path in the benchmarked setup
 - **LLaMA-Factory Integration**: Seamless integration with popular fine-tuning framework
+- **Adaptive LoRA Expert Routing**: Optionally route the GPU-side LoRA expert mixture through a learned, per-token threshold instead of a fixed mix (adapted from AdaMoLE, arXiv:2405.00361); enable with `ACCELERATE_KT_LORA_EXPERT_GATE=1` when LoRA experts are on
 
 | Model | GPU Memory | Training Speed | Hardware |
 |-------|------------|----------------|----------|
