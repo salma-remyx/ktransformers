@@ -26,7 +26,14 @@ observed_landing_zones:
       single-GPU and distributed paths, before optimizer.step(
     branch: practical-offloading-for-fine-tuning-llm-on-commodity-gpu-vi
     timestamp: '2026-08-15T06:46:27Z'
-  last_observed: '2026-08-15T06:46:27Z'
+  - arxiv: 2608.09819v1
+    mode: Mode 2 (adapted port)
+    call_site_specifics: wrap_moe_layers_with_kt_wrapper (kt-kernel/python/sft/wrapper.py),
+      reached from the pre-existing model-loading path at wrapper.py:744, which attaches
+      LoRARouter to each LoRAExperts; LoRAExperts.forwar
+    branch: macaron-v1-towards-open-continual-learning-with-self-improve
+    timestamp: '2026-08-15T12:28:58Z'
+  last_observed: '2026-08-15T12:28:58Z'
 rejected_shapes: []
 coordination_signals: []
-last_updated: '2026-08-15T06:46:27Z'
+last_updated: '2026-08-15T12:28:58Z'
