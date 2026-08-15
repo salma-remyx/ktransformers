@@ -12,7 +12,14 @@ observed_landing_zones:
       kt_lora_expert_top_k is set; also exported as public API fro
     branch: mixlora-enhancing-large-language-models-fine-tuning-with-lor
     timestamp: '2026-08-14T19:33:36Z'
-  last_observed: '2026-08-14T19:33:36Z'
+  - arxiv: 2405.00361v2
+    mode: Mode 2 (adapted port)
+    call_site_specifics: "kt-kernel/python/sft/wrapper.py:wrap_moe_layers_with_kt_wrapper\
+      \ \u2014 the pre-existing MoE SFT wrapping entry point (exported from kt_kernel.sft\
+      \ and invoked by the LLaMA-Factory/accelerate integration) co"
+    branch: adamole-fine-tuning-large-language-models-with-adaptive-mixt
+    timestamp: '2026-08-15T00:29:17Z'
+  last_observed: '2026-08-15T00:29:17Z'
 rejected_shapes: []
 coordination_signals: []
-last_updated: '2026-08-14T19:33:36Z'
+last_updated: '2026-08-15T00:29:17Z'
