@@ -587,12 +587,14 @@ class OnlineQuantConverter(ConverterBase):
         quant_method: str = "int4",
         merge_to_safetensor: bool = True,
         save_backward_weights: bool = False,
+        midpoint_tolerances: List[float] = None,
     ):
         super().__init__(
             input_path, output_path, model_config, cpuinfer_threads, threadpool_count, input_type, merge_to_safetensor
         )
         self.quant_method = quant_method
         self.save_backward_weights = save_backward_weights
+        self.midpoint_tolerances = midpoint_tolerances
 
         # Use tmpfs for intermediate .kt files when merging to safetensor
         if merge_to_safetensor and os.path.isdir("/dev/shm"):
@@ -967,6 +969,22 @@ class OnlineQuantConverter(ConverterBase):
         print(f"    up_proj: {up_proj.shape}")
         print(f"    down_proj: {down_proj.shape}")
 
+        # Optional reconstruction-guided rounding of midpoint-ambiguous weights
+        # before the AMX quantizer runs. Off unless a tolerance sweep is given.
+        if self.midpoint_tolerances:
+            from midpoint_rounding import apply_to_experts
+
+            num_bits = 4 if "int4" in self.quant_method else 8
+            print(f"  Applying guided midpoint rounding (num_bits={num_bits})...")
+            gate_proj, up_proj, down_proj = apply_to_experts(
+                gate_proj,
+                up_proj,
+                down_proj,
+                num_bits=num_bits,
+                tolerances=self.midpoint_tolerances,
+                verbose=True,
+            )
+
         # Create physical_to_logical_map: identity mapping where position i maps to expert i
         physical_to_logical_map = torch.arange(self.num_experts, dtype=torch.int64)
 
@@ -1134,6 +1152,16 @@ def main():
         default=False,
         help="Enable torch profiler and print a summary table after conversion",
     )
+    parser.add_argument(
+        "--midpoint-tolerances",
+        type=str,
+        default=None,
+        help=(
+            "Optional comma-separated tolerance sweep (e.g. 0.05,0.1) enabling "
+            "reconstruction-guided rounding of midpoint-ambiguous weights before "
+            "quantization; plain RTN when omitted"
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -1159,6 +1187,13 @@ def main():
         quant_method = args.quant_method.lower()
         merge_to_safetensor = not args.no_merge_safetensor
 
+        midpoint_tolerances = None
+        if args.midpoint_tolerances is not None:
+            from midpoint_rounding import parse_tolerance_spec
+
+            midpoint_tolerances = parse_tolerance_spec(args.midpoint_tolerances)
+            print(f"Guided midpoint rounding enabled, tolerance sweep: {midpoint_tolerances}")
+
         if quant_method == "awq":
             converter = AWQToColumnMajorConverter(
                 args.input_path,
@@ -1181,6 +1216,7 @@ def main():
                 quant_method,
                 merge_to_safetensor,
                 save_backward_weights=args.save_backward_weights,
+                midpoint_tolerances=midpoint_tolerances,
             )
         else:
             raise ValueError(

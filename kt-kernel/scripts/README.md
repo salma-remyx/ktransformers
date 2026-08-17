@@ -184,6 +184,35 @@ output_dir/
 └── ...
 ```
 
+### Guided Midpoint Rounding (optional)
+
+Round-to-nearest is ambiguous for weights that land on or near the midpoint
+between two quantization levels, and those arbitrary tie-breaks accumulate.
+Pass `--midpoint-tolerances` to re-decide only the weights inside a tolerance
+region around midpoints, choosing the rounding direction that cancels the
+accumulated signed rounding error of the row, then sweep the tolerance and keep
+the candidate whose de-quantized leading singular values best match the
+originals:
+
+```bash
+python scripts/convert_cpu_weights.py \
+  --input-path /path/to/bf16/model \
+  --input-type bf16 \
+  --output /path/to/output \
+  --quant-method int4 \
+  --midpoint-tolerances 0.02,0.05,0.1,0.15,0.25
+```
+
+Plain round-to-nearest (tolerance 0.0) is always part of the sweep, so the
+selection can never score worse than RTN on its own metric. The pass runs
+offline on the converter's BF16 expert tensors and leaves quantization
+parameters unchanged, so it adds no inference-time overhead. Omit the flag to
+keep the previous behavior. Adapted from *ReRound: Reconstructive Rounding to
+Resolve Midpoint Ambiguity in Calibration-Free LLM Quantization*
+(arXiv:2608.11045), which trains a diffusion model for the rounding guidance;
+this implementation substitutes a parameter-free error-feedback proxy for that
+estimator.
+
 **When to use `--no-merge-safetensor`:**
 - Machine runs out of memory during the merge step
 - Need to process very large models on memory-constrained systems
