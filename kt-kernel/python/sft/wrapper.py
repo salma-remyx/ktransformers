@@ -476,6 +476,8 @@ def wrap_moe_layers_with_kt_wrapper(model: nn.Module, kt_plugin: Any) -> list[KT
         )
         layer_wrapper._fused_experts = _layer_is_fused
         layer_wrapper._lora_rank = lora_rank
+        # Ridge damping for Riemannian LoRA preconditioning; None disables it.
+        layer_wrapper._lora_riemannian_reg = getattr(cfg, "kt_lora_riemannian_reg", None)
         layer_wrapper._kt_owner_rank = 0
         layer_wrapper._kt_world_size_at_wrap = distributed_world_size
 

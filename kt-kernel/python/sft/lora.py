@@ -697,6 +697,28 @@ def update_kt_lora_pointers(model: nn.Module):
 # =============================================================================
 
 
+def _maybe_precondition_lora_grads(model: nn.Module) -> None:
+    """Apply Riemannian LoRA preconditioning when the KT config opts in.
+
+    ``wrap_moe_layers_with_kt_wrapper`` copies ``kt_lora_riemannian_reg`` onto
+    each wrapper alongside the other per-layer training flags, so this follows
+    the LoRA buffers wherever they were created.  Wrappers without the flag —
+    including the plain ``SimpleNamespace`` fixtures the tests use — keep
+    today's behaviour.
+    """
+    from .riemannian_lora_grads import apply_riemannian_lora_precondition
+
+    wrappers = _find_kt_wrappers(model)
+    if not wrappers:
+        return
+
+    regs = {getattr(w, "_lora_riemannian_reg", None) for w in wrappers}
+    regs.discard(None)
+    if not regs:
+        return
+
+    apply_riemannian_lora_precondition(model, float(regs.pop()))
+
 def sync_kt_lora_gradients(model: nn.Module) -> None:
     """Validate distributed KT gradient ownership without issuing collectives.
 
@@ -705,8 +727,16 @@ def sync_kt_lora_gradients(model: nn.Module) -> None:
     This compatibility entry point therefore must not all-reduce those
     rank-0-owned gradients again. Ordinary registered GPU modules remain under
     DDP/FSDP ownership and are deliberately untouched here.
+
+    When Riemannian LoRA preconditioning is enabled (``kt_lora_riemannian_reg``
+    on the KT config, or the ``ACCELERATE_KT_LORA_RIEMANNIAN_REG`` variable),
+    the C++-managed LoRA gradients are rescaled here — after backward, before
+    the optimizer step — so every trainer that already calls this entry point
+    picks the preconditioner up without further wiring.
     """
     import torch.distributed as dist
+
+    _maybe_precondition_lora_grads(model)
 
     if not (dist.is_initialized() and dist.get_world_size() > 1):
         return

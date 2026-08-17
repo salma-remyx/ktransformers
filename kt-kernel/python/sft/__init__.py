@@ -53,6 +53,7 @@ from .wrapper import (
     load_kt_model,
 )
 from .profiler import collect_kt_sft_profile, format_kt_sft_profile, reset_kt_sft_profile
+from .riemannian_lora_grads import apply_riemannian_lora_precondition
 
 __all__ = [
     "KTConfig",
@@ -93,4 +94,5 @@ __all__ = [
     "collect_kt_sft_profile",
     "format_kt_sft_profile",
     "reset_kt_sft_profile",
+    "apply_riemannian_lora_precondition",
 ]

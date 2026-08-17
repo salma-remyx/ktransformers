@@ -158,6 +158,9 @@ class KTConfig:
     # LoRA
     kt_lora_rank: int | None = None
     kt_lora_alpha: float | None = None
+    # Riemannian LoRA preconditioning (arXiv:2402.02347): ridge damping for the
+    # r x r gram inverses.  None disables the preconditioner entirely.
+    kt_lora_riemannian_reg: float | None = None
 
     # Training mode
     kt_train_mode: str | None = None  # "lora" | "full" | "hybrid"
@@ -221,6 +224,10 @@ class KTConfig:
             self.kt_lora_alpha = _env_float("ACCELERATE_KT_LORA_ALPHA", None)
         if self.kt_lora_alpha is None and self.kt_lora_rank is not None:
             self.kt_lora_alpha = float(self.kt_lora_rank * 2)
+        if self.kt_lora_riemannian_reg is None:
+            # Empty string means "unset", not "zero": the knob is opt-in and a
+            # zero reg would make the gram inverse singular.
+            self.kt_lora_riemannian_reg = _env_float("ACCELERATE_KT_LORA_RIEMANNIAN_REG", None)
         if self.kt_train_mode is None:
             self.kt_train_mode = os.environ.get("ACCELERATE_KT_TRAIN_MODE", "lora")
         if self.kt_full_weight_grad is None:
