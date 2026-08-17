@@ -33,7 +33,14 @@ observed_landing_zones:
       LoRARouter to each LoRAExperts; LoRAExperts.forwar
     branch: macaron-v1-towards-open-continual-learning-with-self-improve
     timestamp: '2026-08-15T12:28:58Z'
-  last_observed: '2026-08-15T12:28:58Z'
+  - arxiv: 2402.02347v3
+    mode: Mode 2 (adapted port)
+    call_site_specifics: "sync_kt_lora_gradients in kt-kernel/python/sft/lora.py:722\
+      \ \u2014 the pre-existing post-backward entry point external trainers (LLaMA-Factory/accelerate,\
+      \ per the ACCELERATE_KT_* config family) already call"
+    branch: riemannian-preconditioned-lora-for-fine-tuning-foundation-mo
+    timestamp: '2026-08-17T15:01:08Z'
+  last_observed: '2026-08-17T15:01:08Z'
 rejected_shapes: []
 coordination_signals: []
-last_updated: '2026-08-15T12:28:58Z'
+last_updated: '2026-08-17T15:01:08Z'
