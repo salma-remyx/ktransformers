@@ -147,6 +147,9 @@ class KTConfig:
     kt_weight_path: str | None = None
     kt_expert_checkpoint_path: str | None = None  # HF expert checkpoint or KT Full checkpoint directory
     kt_num_gpu_experts: int | None = None
+    # Derive kt_num_gpu_experts from device memory when the user did not set it
+    kt_auto_gpu_experts: bool | None = None
+    kt_gpu_memory_gb: float | None = None
     kt_skip_expert_loading: bool | None = None
     kt_share_backward_bb: bool | None = None  # default True — always saves memory
     kt_share_cache_pool: bool | None = None  # auto-set by trainer_config_process, not user-facing
@@ -203,6 +206,10 @@ class KTConfig:
             self.kt_expert_checkpoint_path = os.environ.get("ACCELERATE_KT_EXPERT_CHECKPOINT_PATH", None)
         if self.kt_num_gpu_experts is None:
             self.kt_num_gpu_experts = _env_int("ACCELERATE_KT_NUM_GPU_EXPERTS", 0)
+        if self.kt_auto_gpu_experts is None:
+            self.kt_auto_gpu_experts = _env_bool("ACCELERATE_KT_AUTO_GPU_EXPERTS", False)
+        if self.kt_gpu_memory_gb is None:
+            self.kt_gpu_memory_gb = _env_float("ACCELERATE_KT_GPU_MEMORY_GB", None)
         if self.kt_max_cache_depth is None:
             self.kt_max_cache_depth = _env_int("ACCELERATE_KT_MAX_CACHE_DEPTH", 2)
         if self.kt_share_backward_bb is None:

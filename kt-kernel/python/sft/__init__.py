@@ -52,6 +52,12 @@ from .wrapper import (
     get_kt_loading_kwargs,
     load_kt_model,
 )
+from .placement import (
+    PlacementAdvice,
+    estimate_expert_bytes,
+    solve_num_gpu_experts,
+    total_gpu_memory_bytes,
+)
 from .profiler import collect_kt_sft_profile, format_kt_sft_profile, reset_kt_sft_profile
 
 __all__ = [
@@ -88,6 +94,10 @@ __all__ = [
     "wrap_moe_layers_with_kt_wrapper",
     "build_kt_device_map",
     "build_kt_device_map_simplified",
+    "PlacementAdvice",
+    "estimate_expert_bytes",
+    "solve_num_gpu_experts",
+    "total_gpu_memory_bytes",
     "get_kt_loading_kwargs",
     "load_kt_model",
     "collect_kt_sft_profile",

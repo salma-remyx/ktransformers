@@ -99,6 +99,7 @@ KTransformers × LLaMA-Factory integration for ultra-large MoE model fine-tuning
 
 **Key Features:**
 - **Multi-Backend Support**: CPU/GPU hybrid fine-tuning with INT8/INT4 quantization
+- **Auto GPU-Expert Placement**: Optional memory-capped advisor derives `kt_num_gpu_experts` from free VRAM (set `ACCELERATE_KT_AUTO_GPU_EXPERTS=1`, or `ACCELERATE_KT_GPU_MEMORY_GB` when no GPU is visible) — adapted from LazyTrain (arXiv:2608.11919)
 - **Ultra-Large MoE Support**: Fine-tune models like DeepSeek-V3/R1 on limited GPU memory
 - **Faster than ZeRO-Offload**: 6-12x training speedup in benchmarked MoE SFT workloads
 - **Lower CPU Memory**: About half the CPU memory of the previous KT SFT path in the benchmarked setup

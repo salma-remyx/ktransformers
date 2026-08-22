@@ -73,6 +73,53 @@ def _get_kt_config(kt_plugin: Any):
     return KTConfig.from_object(kt_plugin)
 
 
+def _resolve_num_gpu_experts(
+    cfg: Any,
+    config,
+    moe_config,
+    num_gpu_experts: int,
+    device: str = "cuda:0",
+) -> int:
+    """Fill in ``kt_num_gpu_experts`` from device memory when auto mode is on.
+
+    An explicit ``kt_num_gpu_experts`` wins over the advisor. Auto mode probes
+    free VRAM (or the ``kt_gpu_memory_gb`` override when no GPU is visible) and
+    solves for the largest uniform per-layer placement that fits.
+    """
+    if num_gpu_experts > 0 or not getattr(cfg, "kt_auto_gpu_experts", False):
+        return num_gpu_experts
+
+    from .placement import solve_num_gpu_experts, total_gpu_memory_bytes
+
+    budget = total_gpu_memory_bytes(device)
+    budget_source = "free device memory"
+    if budget is None:
+        override = getattr(cfg, "kt_gpu_memory_gb", None)
+        if not override:
+            logger.warning(
+                "kt_auto_gpu_experts set but no GPU visible and kt_gpu_memory_gb unset; keeping all experts on CPU."
+            )
+            return 0
+        budget = int(float(override) * (1 << 30))
+        budget_source = f"kt_gpu_memory_gb={override}"
+
+    hidden_size = getattr(getattr(config, "text_config", config), "hidden_size", None)
+    advice = solve_num_gpu_experts(
+        moe_config,
+        hidden_size,
+        config.num_hidden_layers,
+        budget,
+        method=getattr(cfg, "kt_backend", None),
+    )
+    logger.info(
+        "Auto GPU-expert placement (%s): %d of %d experts per layer on GPU",
+        budget_source,
+        advice.num_gpu_experts_per_layer,
+        moe_config.expert_num,
+    )
+    return advice.num_gpu_experts_per_layer
+
+
 def build_kt_device_map(config, kt_plugin, device: str = "cuda:0") -> dict[str, str | int]:
     """
     Build device_map for KT model loading with hybrid GPU/CPU expert placement.
@@ -83,6 +130,9 @@ def build_kt_device_map(config, kt_plugin, device: str = "cuda:0") -> dict[str, 
     num_experts = moe_config.expert_num
     cfg = _get_kt_config(kt_plugin)
     num_gpu_experts = getattr(cfg, "kt_num_gpu_experts", 0) or 0
+    num_gpu_experts = _resolve_num_gpu_experts(
+        cfg, config, moe_config, num_gpu_experts, device=device
+    )
 
     device_map: dict[str, str | int] = {}
 
@@ -116,6 +166,9 @@ def build_kt_device_map_simplified(config, kt_plugin, device: str = "cuda:0") ->
     num_layers = config.num_hidden_layers
     cfg = _get_kt_config(kt_plugin)
     num_gpu_experts = getattr(cfg, "kt_num_gpu_experts", 0) or 0
+    num_gpu_experts = _resolve_num_gpu_experts(
+        cfg, config, moe_config, num_gpu_experts, device=device
+    )
 
     device_map: dict[str, str | int] = {}
 
