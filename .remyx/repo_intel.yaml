@@ -50,7 +50,14 @@ observed_landing_zones:
     call_site_specifics: ''
     branch: deamoe-efficient-moe-structure-for-fast-small-batch-decoding
     timestamp: '2026-08-22T13:32:10Z'
-  last_observed: '2026-08-22T13:32:10Z'
+  - arxiv: 2608.02391v1
+    mode: Mode 2 (adapted port)
+    call_site_specifics: 'Library API: KTSubspaceES is a new public export of the
+      kt_kernel.sft package (kt-kernel/python/sft/__init__.py:48, listed in __all__),
+      whose consumers are external training loops importing the shippe'
+    branch: cooperative-coevolution-for-resource-constrained-agentic-llm
+    timestamp: '2026-08-22T21:39:22Z'
+  last_observed: '2026-08-22T21:39:22Z'
 rejected_shapes: []
 coordination_signals: []
-last_updated: '2026-08-22T13:32:10Z'
+last_updated: '2026-08-22T21:39:22Z'
