@@ -40,7 +40,12 @@ observed_landing_zones:
       \ per the ACCELERATE_KT_* config family) already call"
     branch: riemannian-preconditioned-lora-for-fine-tuning-foundation-mo
     timestamp: '2026-08-17T15:01:08Z'
-  last_observed: '2026-08-17T15:01:08Z'
+  - arxiv: 2608.11919v1
+    mode: ''
+    call_site_specifics: ''
+    branch: lazytrain-limited-resource-allocation-toward-zero-waste-yiel
+    timestamp: '2026-08-22T02:43:05Z'
+  last_observed: '2026-08-22T02:43:05Z'
 rejected_shapes: []
 coordination_signals: []
-last_updated: '2026-08-17T15:01:08Z'
+last_updated: '2026-08-22T02:43:05Z'
