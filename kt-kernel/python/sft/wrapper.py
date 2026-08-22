@@ -23,6 +23,7 @@ from .arch import (
 )
 from .layer import KTMoELayerWrapper
 from .lora import LoRAExperts
+from .expert_department import resolve_department_topk
 from .base import _supports_authoritative_optimizer_grads
 from .checkpoint import load_full_weight_layer, resolve_full_weight_checkpoint
 from .dist_utils import _distributed_rank_world_size
@@ -193,6 +194,21 @@ def wrap_moe_layers_with_kt_wrapper(model: nn.Module, kt_plugin: Any) -> list[KT
     use_lora_experts = bool(_raw_le) if _raw_le is not None else False
     lora_expert_num = getattr(cfg, "kt_lora_expert_num", 2) or 2
     lora_expert_intermediate_size = getattr(cfg, "kt_lora_expert_intermediate_size", 1024) or 1024
+
+    # Department routing (two-stage top-k). Off unless kt_departments_per_tok
+    # is set, so the default wrap path is unchanged. The top-k width used for
+    # clamping comes from the model config; kt_num_experts_per_tok only exists
+    # to override it for configs that do not carry the field.
+    _raw_dpt = getattr(cfg, "kt_departments_per_tok", None)
+    _configured_k = int(getattr(cfg, "kt_num_experts_per_tok", 0) or 0) or int(moe_config.num_experts_per_tok)
+    departments_per_tok = resolve_department_topk(_raw_dpt, _configured_k)
+    num_departments = int(getattr(cfg, "kt_num_departments", 0) or 0)
+    if departments_per_tok is not None:
+        if is_rank_0:
+            logger.info(
+                f"Department routing enabled: departments_per_tok={departments_per_tok}, "
+                f"num_departments={num_departments or 'default (num_experts_per_tok)'}"
+            )
 
     if is_rank_0:
         logger.info(
@@ -474,6 +490,10 @@ def wrap_moe_layers_with_kt_wrapper(model: nn.Module, kt_plugin: Any) -> list[KT
             full_weight_grad=full_weight_grad,
             uses_authoritative_optimizer_grads=uses_authoritative_optimizer_grads,
         )
+        if departments_per_tok is not None:
+            layer_wrapper.departments_per_tok = departments_per_tok
+            layer_wrapper.num_departments = num_departments
+            layer_wrapper._init_department_routing(getattr(moe_module, moe_config.router_attr, None))
         layer_wrapper._fused_experts = _layer_is_fused
         layer_wrapper._lora_rank = lora_rank
         layer_wrapper._kt_owner_rank = 0

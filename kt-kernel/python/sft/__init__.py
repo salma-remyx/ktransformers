@@ -26,6 +26,11 @@ from .arch import (
 )
 from .autograd import KTMoEFunction
 from .layer import KTMoELayerWrapper
+from .expert_department import (
+    assign_departments,
+    department_topk,
+    loaded_body_bound,
+)
 from .weights import (
     extract_moe_weights,
     load_experts_from_checkpoint_files,
@@ -70,6 +75,9 @@ __all__ = [
     "KTAMXConfigError",
     "KTMoEFunction",
     "KTMoELayerWrapper",
+    "assign_departments",
+    "department_topk",
+    "loaded_body_bound",
     "extract_moe_weights",
     "load_experts_from_checkpoint_files",
     "load_experts_from_kt_weight_path",

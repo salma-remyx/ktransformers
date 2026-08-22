@@ -168,6 +168,11 @@ class KTConfig:
     kt_lora_expert_num: int | None = None
     kt_lora_expert_intermediate_size: int | None = None
 
+    # Department routing (two-stage top-k over expert departments)
+    kt_departments_per_tok: int | None = None  # 0/None = off; must be <= num_experts_per_tok
+    kt_num_departments: int | None = None  # 0/None = default to num_experts_per_tok
+    kt_num_experts_per_tok: int | None = None  # top-k width, read from the model config when unset
+
     # Runtime state (set during wrapping, not by user)
     kt_checkpoint_files: list[str] | None = None
     kt_sharded_metadata: dict | None = None
@@ -215,6 +220,12 @@ class KTConfig:
             self.kt_lora_expert_num = _env_int("ACCELERATE_KT_LORA_EXPERT_NUM", None)
         if self.kt_lora_expert_intermediate_size is None:
             self.kt_lora_expert_intermediate_size = _env_int("ACCELERATE_KT_LORA_EXPERT_INTERMEDIATE_SIZE", None)
+        if self.kt_departments_per_tok is None:
+            self.kt_departments_per_tok = _env_int("ACCELERATE_KT_DEPARTMENTS_PER_TOK", None)
+        if self.kt_num_departments is None:
+            self.kt_num_departments = _env_int("ACCELERATE_KT_NUM_DEPARTMENTS", None)
+        if self.kt_num_experts_per_tok is None:
+            self.kt_num_experts_per_tok = _env_int("ACCELERATE_KT_NUM_EXPERTS_PER_TOK", None)
         if self.kt_lora_rank is None:
             self.kt_lora_rank = _env_int("ACCELERATE_KT_LORA_RANK", None)
         if self.kt_lora_alpha is None:

@@ -29,6 +29,7 @@ from .dist_utils import (
     _dist_scatter_varlen_from_rank0,
     _qlen_offsets,
 )
+from .expert_department import assign_departments, department_topk, resolve_department_topk
 
 logger = logging.getLogger(__name__)
 _KT_SFT_DEBUG = os.environ.get("KT_SFT_DEBUG", "0") == "1"
@@ -160,6 +161,14 @@ class KTMoELayerWrapper(nn.Module):
         # 4. lora_experts (separate LoRA expert MLPs, different from PEFT LoRA on experts)
         self.lora_experts = lora_experts
 
+        # 4b. Department routing (two-stage top-k). Off unless the layer is
+        # explicitly configured, so the default path is byte-identical.
+        self.departments_per_tok: int | None = None
+        self.num_departments: int | None = None
+        self._department_of_expert: torch.Tensor | None = None
+        self._departments_per_tok: int | None = None
+        self._init_department_routing(original_router)
+
         # PEFT LoRA tracking (set by kt_adapt_peft_lora)
         # _peft_lora_modules: {expert_idx: {proj_name: (lora_A, lora_B)}}
         self._peft_lora_modules: dict[int, dict[str, tuple[nn.Module, nn.Module]]] | None = None
@@ -178,6 +187,39 @@ class KTMoELayerWrapper(nn.Module):
         self._uses_authoritative_optimizer_grads = bool(uses_authoritative_optimizer_grads)
         self.register_state_dict_post_hook(_strip_kt_zero_storage_from_state_dict)
         self.register_load_state_dict_pre_hook(_supply_kt_zero_storage_for_state_dict_load)
+
+    def _init_department_routing(self, original_router: nn.Module | None) -> None:
+        """Resolve department routing config into the per-layer assignment.
+
+        Safe to call again after the attributes are set post-construction (the
+        wrapping entry point assigns them on an already-built layer), so the
+        derived tensors never go stale.
+        """
+        self._departments_per_tok = resolve_department_topk(
+            self.departments_per_tok, self.moe_config.num_experts_per_tok
+        )
+        if self._departments_per_tok is None:
+            self._department_of_expert = None
+            return
+        num_departments = int(self.num_departments or 0) or int(self.moe_config.num_experts_per_tok)
+        router_weight = None if original_router is None else getattr(original_router, "weight", None)
+        self._department_of_expert = assign_departments(
+            int(self.moe_config.expert_num),
+            num_departments,
+            router_weight=router_weight,
+        )
+
+    def _department_router_probs(self, hidden_states: torch.Tensor, router: nn.Module) -> torch.Tensor:
+        """Per-expert probabilities fed to the two-stage department routing.
+
+        Reuses the router the layer already owns (including any PEFT LoRA on
+        it) and only replaces the *selection* rule, so department routing stays
+        a drop-in comparison against the vanilla top-k path on the same logits.
+        Sigmoid matches the GLM4/DeepSeek-style affinity convention; the
+        department stage only ranks, so the exact normalization is not load
+        bearing.
+        """
+        return torch.sigmoid(router(hidden_states.view(-1, self.hidden_size)).float())
 
     def _compute_shared_expert(self, hidden_states: torch.Tensor) -> torch.Tensor | None:
         if self._shared_expert_attr is None:
@@ -402,6 +444,25 @@ class KTMoELayerWrapper(nn.Module):
                     f"Layer {self.layer_idx}: trainable router produced detached routing weights"
                 )
             return topk_ids, topk_weights
+
+        def finish_departments(
+            router_probs: torch.Tensor,
+        ) -> tuple[torch.Tensor, torch.Tensor]:
+            # Two-stage routing: constrain the top-k to the top departments.
+            # Kept inside routing_context so a trainable router still reaches
+            # department_topk with its autograd graph attached.
+            topk_ids, topk_weights = department_topk(
+                router_probs,
+                self._department_of_expert,
+                self.moe_config.num_experts_per_tok,
+                int(self._departments_per_tok),
+            )
+            return finish(topk_ids, topk_weights)
+
+        if self._departments_per_tok is not None and self._department_of_expert is not None:
+            with routing_context:
+                router_probs = self._department_router_probs(hidden_states, router)
+                return finish_departments(router_probs)
 
         with routing_context:
             if self.router_type == "deepseek_gate":
