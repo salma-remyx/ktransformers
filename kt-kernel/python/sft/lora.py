@@ -691,6 +691,12 @@ def update_kt_lora_pointers(model: nn.Module):
             if backend is not None and getattr(backend, "_uses_authoritative_optimizer_grads", False):
                 backend.release_authoritative_optimizer_grads()
 
+    # A subspace-ES trainer (if attached) advances its evaluation schedule at
+    # the same step boundary the gradient path uses.
+    trainer = getattr(model, "kt_subspace_es", None)
+    if trainer is not None:
+        trainer.step_boundary()
+
 
 # =============================================================================
 # Cross-Rank Gradient Synchronization

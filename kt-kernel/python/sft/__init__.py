@@ -45,6 +45,7 @@ from .lora import (
     LoRAExpertMLP,
     LoRAExperts,
 )
+from .es import KTSubspaceES
 from .wrapper import (
     wrap_moe_layers_with_kt_wrapper,
     build_kt_device_map,
@@ -85,6 +86,7 @@ __all__ = [
     "load_kt_moe_from_adapter",
     "LoRAExpertMLP",
     "LoRAExperts",
+    "KTSubspaceES",
     "wrap_moe_layers_with_kt_wrapper",
     "build_kt_device_map",
     "build_kt_device_map_simplified",

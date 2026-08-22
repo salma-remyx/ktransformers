@@ -103,6 +103,7 @@ KTransformers × LLaMA-Factory integration for ultra-large MoE model fine-tuning
 - **Faster than ZeRO-Offload**: 6-12x training speedup in benchmarked MoE SFT workloads
 - **Lower CPU Memory**: About half the CPU memory of the previous KT SFT path in the benchmarked setup
 - **LLaMA-Factory Integration**: Seamless integration with popular fine-tuning framework
+- **Subspace Evolution Strategy**: Backpropagation-free full-parameter post-training (`KTSubspaceES`) — cooperative parameter-subspace search over the KT Full expert buffers, with rewards from rollout scoring instead of gradients. Adapted from [CoPES (arXiv:2608.02391)](https://arxiv.org/abs/2608.02391)
 
 | Model | GPU Memory | Training Speed | Hardware |
 |-------|------------|----------------|----------|
