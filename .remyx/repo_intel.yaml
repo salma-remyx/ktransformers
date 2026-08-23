@@ -57,7 +57,14 @@ observed_landing_zones:
       whose consumers are external training loops importing the shippe'
     branch: cooperative-coevolution-for-resource-constrained-agentic-llm
     timestamp: '2026-08-22T21:39:22Z'
-  last_observed: '2026-08-22T21:39:22Z'
+  - arxiv: 2406.16282v1
+    mode: Mode 2 (adapted port)
+    call_site_specifics: "wrap_moe_layers_with_kt_wrapper (kt-kernel/python/sft/wrapper.py),\
+      \ the pre-existing MoE SFT wrapping entry point exported from kt_kernel.sft\
+      \ \u2014 it reads cfg.kt_approx_bp and passes approx_bp into LoRAE"
+    branch: reducing-fine-tuning-memory-overhead-by-approximate-and-memo
+    timestamp: '2026-08-23T07:49:33Z'
+  last_observed: '2026-08-23T07:49:33Z'
 rejected_shapes: []
 coordination_signals: []
-last_updated: '2026-08-22T21:39:22Z'
+last_updated: '2026-08-23T07:49:33Z'
