@@ -167,6 +167,7 @@ class KTConfig:
     kt_use_lora_experts: bool | None = None
     kt_lora_expert_num: int | None = None
     kt_lora_expert_intermediate_size: int | None = None
+    kt_approx_bp: bool | None = None  # ReSiLU2 backward for LoRA experts, saves activation memory
 
     # Runtime state (set during wrapping, not by user)
     kt_checkpoint_files: list[str] | None = None
@@ -215,6 +216,8 @@ class KTConfig:
             self.kt_lora_expert_num = _env_int("ACCELERATE_KT_LORA_EXPERT_NUM", None)
         if self.kt_lora_expert_intermediate_size is None:
             self.kt_lora_expert_intermediate_size = _env_int("ACCELERATE_KT_LORA_EXPERT_INTERMEDIATE_SIZE", None)
+        if self.kt_approx_bp is None:
+            self.kt_approx_bp = _env_bool("ACCELERATE_KT_APPROX_BP", False)
         if self.kt_lora_rank is None:
             self.kt_lora_rank = _env_int("ACCELERATE_KT_LORA_RANK", None)
         if self.kt_lora_alpha is None:

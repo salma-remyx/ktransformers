@@ -21,6 +21,7 @@ import re
 import torch
 import torch.nn as nn
 
+from .approx_bp import approx_silu, estimate_lora_expert_savings
 from .arch import MOEArchConfig
 from .checkpoint import load_full_weight_checkpoint, save_full_weight_checkpoint
 from .dist_utils import _distributed_rank_world_size
@@ -34,7 +35,13 @@ logger = logging.getLogger(__name__)
 
 
 class LoRAExpertMLP(nn.Module):
-    """Single LoRA Expert with SwiGLU activation structure."""
+    """Single LoRA Expert with SwiGLU activation structure.
+
+    ``approx_bp`` swaps the activation's backward for a 2-bit step-function
+    derivative while leaving the forward SiLU unchanged (Approx-BP /
+    ReSiLU2), which drops the per-expert activation the autograd graph
+    would otherwise hold until backward.
+    """
 
     def __init__(
         self,
@@ -42,19 +49,24 @@ class LoRAExpertMLP(nn.Module):
         intermediate_size: int,
         device: str = "cuda",
         dtype: torch.dtype = torch.bfloat16,
+        approx_bp: bool = False,
     ):
         super().__init__()
         self.le_gate = nn.Linear(hidden_size, intermediate_size, bias=False, device=device, dtype=dtype)
         self.le_up = nn.Linear(hidden_size, intermediate_size, bias=False, device=device, dtype=dtype)
         self.le_down = nn.Linear(intermediate_size, hidden_size, bias=False, device=device, dtype=dtype)
         self.act_fn = nn.SiLU()
+        self.approx_bp = approx_bp
 
         nn.init.zeros_(self.le_down.weight)
         nn.init.kaiming_uniform_(self.le_gate.weight, a=math.sqrt(5))
         nn.init.kaiming_uniform_(self.le_up.weight, a=math.sqrt(5))
 
+    def _activate(self, x: torch.Tensor) -> torch.Tensor:
+        return approx_silu(x) if self.approx_bp else self.act_fn(x)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.le_down(self.act_fn(self.le_gate(x)) * self.le_up(x))
+        return self.le_down(self._activate(self.le_gate(x)) * self.le_up(x))
 
 
 class LoRAExperts(nn.Module):
@@ -67,12 +79,14 @@ class LoRAExperts(nn.Module):
         intermediate_size: int,
         device: str = "cuda",
         dtype: torch.dtype = torch.bfloat16,
+        approx_bp: bool = False,
     ):
         super().__init__()
         self.experts = nn.ModuleList(
-            [LoRAExpertMLP(hidden_size, intermediate_size, device, dtype) for _ in range(num_experts)]
+            [LoRAExpertMLP(hidden_size, intermediate_size, device, dtype, approx_bp) for _ in range(num_experts)]
         )
         self.num_experts = num_experts
+        self.approx_bp = approx_bp
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         output = torch.zeros_like(hidden_states)

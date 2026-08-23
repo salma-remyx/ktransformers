@@ -10,6 +10,7 @@ distributed) on top of the inference-only kt_kernel base package.
 Additional dependencies beyond base kt_kernel: torch.nn, torch.distributed, peft (optional).
 """
 
+from .approx_bp import approx_silu, estimate_lora_expert_savings
 from .config import KTConfig
 from .base import BaseSFTMoEWrapper, KExpertsSFTBuffer
 from .amx import AMXSFTMoEWrapper
@@ -56,6 +57,8 @@ from .profiler import collect_kt_sft_profile, format_kt_sft_profile, reset_kt_sf
 
 __all__ = [
     "KTConfig",
+    "approx_silu",
+    "estimate_lora_expert_savings",
     "BaseSFTMoEWrapper",
     "KExpertsSFTBuffer",
     "AMXSFTMoEWrapper",

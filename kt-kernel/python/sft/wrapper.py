@@ -193,14 +193,21 @@ def wrap_moe_layers_with_kt_wrapper(model: nn.Module, kt_plugin: Any) -> list[KT
     use_lora_experts = bool(_raw_le) if _raw_le is not None else False
     lora_expert_num = getattr(cfg, "kt_lora_expert_num", 2) or 2
     lora_expert_intermediate_size = getattr(cfg, "kt_lora_expert_intermediate_size", 1024) or 1024
+    _raw_abp = getattr(cfg, "kt_approx_bp", None)
+    approx_bp = bool(_raw_abp) if _raw_abp is not None else False
 
     if is_rank_0:
         logger.info(
             f"LoRA Experts config: use_lora_experts={use_lora_experts}, "
-            f"num={lora_expert_num}, intermediate_size={lora_expert_intermediate_size}"
+            f"num={lora_expert_num}, intermediate_size={lora_expert_intermediate_size}, approx_bp={approx_bp}"
         )
         if full_weight_grad:
             logger.info(f"Full weight gradient mode enabled (lora_rank={lora_rank})")
+        if use_lora_experts and approx_bp:
+            logger.info(
+                "Approx-BP (ReSiLU2) enabled for LoRA experts: activation backward "
+                "keeps a 2-bit segment index instead of the activation input"
+            )
 
     wrappers: list[KTMoELayerWrapper] = []
     moe_layer_count = 0
@@ -461,6 +468,7 @@ def wrap_moe_layers_with_kt_wrapper(model: nn.Module, kt_plugin: Any) -> list[KT
                 intermediate_size=lora_expert_intermediate_size,
                 device="cuda",
                 dtype=torch.bfloat16,
+                approx_bp=approx_bp,
             )
 
         layer_wrapper = KTMoELayerWrapper(
