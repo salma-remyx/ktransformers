@@ -64,7 +64,14 @@ observed_landing_zones:
       \ \u2014 it reads cfg.kt_approx_bp and passes approx_bp into LoRAE"
     branch: reducing-fine-tuning-memory-overhead-by-approximate-and-memo
     timestamp: '2026-08-23T07:49:33Z'
-  last_observed: '2026-08-23T07:49:33Z'
+  - arxiv: 2410.09758v2
+    mode: Mode 2 (adapted port)
+    call_site_specifics: "update_kt_lora_pointers in kt-kernel/python/sft/lora.py:730\
+      \ \u2014 the pre-existing post-optimizer-step hook exported from kt_kernel.sft\
+      \ and invoked by the external LLaMA-Factory trainer (llamafactory is p"
+    branch: bidora-bi-level-optimization-based-weight-decomposed-low-ran
+    timestamp: '2026-08-23T18:25:03Z'
+  last_observed: '2026-08-23T18:25:03Z'
 rejected_shapes: []
 coordination_signals: []
-last_updated: '2026-08-23T07:49:33Z'
+last_updated: '2026-08-23T18:25:03Z'
