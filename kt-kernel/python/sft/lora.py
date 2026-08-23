@@ -284,6 +284,7 @@ def kt_adapt_peft_lora(model: nn.Module) -> None:
 
             wrapper._fused_expert_lora_params = lora_params
             wrapper._peft_lora_modules = None
+            _attach_lora_magnitude(wrapper, lora_buffers, lora_grad_buffers, moe_config)
             adapted_count += 1
             continue
 
@@ -372,6 +373,7 @@ def kt_adapt_peft_lora(model: nn.Module) -> None:
             authoritative_mode=authoritative_mode,
             authoritative_backend=wrapper.wrapper if authoritative_mode and is_rank_0 else None,
         )
+        _attach_lora_magnitude(wrapper, lora_buffers, lora_grad_buffers, moe_config)
 
         adapted_count += 1
 
@@ -676,12 +678,64 @@ def _replace_peft_weights_with_views(
 # =============================================================================
 
 
-def update_kt_lora_pointers(model: nn.Module):
+def _attach_lora_magnitude(
+    wrapper,
+    lora_buffers: dict[str, torch.Tensor],
+    lora_grad_buffers: dict[str, torch.Tensor],
+    moe_config: MOEArchConfig,
+) -> None:
+    """Optionally seed weight-decomposed magnitude state on a KT wrapper.
+
+    Enabled by ``kt_lora_magnitude``. The seeded magnitudes start at the
+    current column norms of ``B @ A`` (zero at LoRA init), so training with
+    the flag off and on produce the same first step.
+    """
+    wrapper._lora_magnitude_state = None
+    wrapper._lora_magnitude_buffers = None
+    if not getattr(wrapper, "_kt_lora_magnitude", False):
+        return
+    from .magnitude import init_lora_magnitude
+
+    scaling = getattr(getattr(wrapper, "wrapper", None), "lora_scaling", None)
+    state = init_lora_magnitude(
+        lora_buffers,
+        moe_config,
+        scaling=1.0 if scaling is None else float(scaling),
+    )
+    wrapper._lora_magnitude_state = state
+    wrapper._lora_magnitude_buffers = (lora_buffers, lora_grad_buffers)
+
+
+def _step_lora_magnitude(wrapper) -> None:
+    """Apply the weight-decomposed (magnitude/direction) post-step update.
+
+    Runs after ``optimizer.step()``: the direction buffers the optimizer just
+    wrote are re-normalized to unit column norm and rescaled by the magnitude
+    row, which is itself advanced from the accumulated direction gradient.
+    Buffers are shared with the C++ kernel, so the rewrite is visible to the
+    next forward without any pointer change.
+    """
+    from .magnitude import apply_lora_magnitude, step_lora_magnitude
+
+    state = getattr(wrapper, "_lora_magnitude_state", None)
+    if state is None:
+        return
+    lora_buffers, lora_grad_buffers = wrapper._lora_magnitude_buffers
+    lr = getattr(wrapper, "_lora_magnitude_lr", None)
+    if lr is not None and lr > 0:
+        step_lora_magnitude(state, lora_grad_buffers, float(lr))
+    apply_lora_magnitude(lora_buffers, state)
+
+
+def update_kt_lora_pointers(model: nn.Module, learning_rate: float | None = None):
     """Mark KT wrapper LoRA pointers and base weight pointers as dirty after optimizer.step()."""
     wrappers = _find_kt_wrappers(model)
 
     if wrappers:
         for wrapper in wrappers:
+            if learning_rate is not None:
+                wrapper._lora_magnitude_lr = float(learning_rate)
+            _step_lora_magnitude(wrapper)
             if getattr(wrapper, "_kt_managed_lora_enabled", False):
                 wrapper._lora_pointers_dirty = True
             # In full mode, base weights also need re-sync after optimizer step

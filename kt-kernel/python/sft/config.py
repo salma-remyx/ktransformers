@@ -158,6 +158,8 @@ class KTConfig:
     # LoRA
     kt_lora_rank: int | None = None
     kt_lora_alpha: float | None = None
+    # Weight-decomposed (magnitude/direction) LoRA normalization
+    kt_lora_magnitude: bool | None = None
 
     # Training mode
     kt_train_mode: str | None = None  # "lora" | "full" | "hybrid"
@@ -221,6 +223,8 @@ class KTConfig:
             self.kt_lora_alpha = _env_float("ACCELERATE_KT_LORA_ALPHA", None)
         if self.kt_lora_alpha is None and self.kt_lora_rank is not None:
             self.kt_lora_alpha = float(self.kt_lora_rank * 2)
+        if self.kt_lora_magnitude is None:
+            self.kt_lora_magnitude = _env_bool("ACCELERATE_KT_LORA_MAGNITUDE", False)
         if self.kt_train_mode is None:
             self.kt_train_mode = os.environ.get("ACCELERATE_KT_TRAIN_MODE", "lora")
         if self.kt_full_weight_grad is None:

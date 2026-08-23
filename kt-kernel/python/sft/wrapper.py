@@ -476,6 +476,9 @@ def wrap_moe_layers_with_kt_wrapper(model: nn.Module, kt_plugin: Any) -> list[KT
         )
         layer_wrapper._fused_experts = _layer_is_fused
         layer_wrapper._lora_rank = lora_rank
+        # Weight-decomposed (magnitude/direction) LoRA normalization, consumed
+        # by kt_adapt_peft_lora when seeding magnitude state.
+        layer_wrapper._kt_lora_magnitude = bool(getattr(cfg, "kt_lora_magnitude", False))
         layer_wrapper._kt_owner_rank = 0
         layer_wrapper._kt_world_size_at_wrap = distributed_world_size
 
