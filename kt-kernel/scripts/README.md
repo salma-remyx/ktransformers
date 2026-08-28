@@ -452,3 +452,18 @@ python scripts/convert_gpu_weights.py \
   --max_gpu_memory "40GiB" \
   --trust_remote_code
 ```
+
+### Fixed-Grid Refinement (`--refine-sweeps`)
+
+For INT4 conversions, the optional `--refine-sweeps N` flag applies fixed-grid discrete refinement (adapted from "ReQuant: Fixed-Grid Discrete Refinement for Post-Training Quantization") to each expert projection before AMX packing. Starting from the default round-to-nearest assignments, each sweep revisits the integer assignments on the same quantization grid and re-fits the per-row scale by least squares, accepting only updates that strictly reduce weight reconstruction error. The refined solution is re-emitted so the existing AMX quantizer reproduces it exactly — no kernel or format changes.
+
+```bash
+python scripts/convert_cpu_weights.py \
+  --input-path /path/to/model \
+  --input-type bf16 \
+  --output /path/to/output \
+  --quant-method int4 \
+  --refine-sweeps 4
+```
+
+This is a pure quality-improvement pass: the output `.kt` format is unchanged and the runtime cost is zero. Gains are largest at low bit-widths (INT4); at INT8 round-to-nearest is already near the weight-MSE optimum, so refinement typically leaves weights unchanged. Default is `0` (disabled).
